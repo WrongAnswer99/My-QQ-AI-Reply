@@ -1,0 +1,17 @@
+{
+    "napcat_http_base": "http://127.0.0.1:3000",
+    "napcat_token": "your_napcat_token",
+    "http_report_port": 8081,
+    "bot_qq": "your_bot_qq",
+    "master_qq": "your_master_qq",
+    "qq_path": "your_qq_path",
+    "private_chat_enabled": true,
+    "group_need_at": true,
+    "group_trigger_keywords": [],
+    "ai": {
+        "api_key": "your_api_key",
+        "base_url": "your_base_url",
+        "model": "your_model",
+        "system_prompt": "your_system_prompt"
+    }
+}
