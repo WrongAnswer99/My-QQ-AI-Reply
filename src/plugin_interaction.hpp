@@ -3,6 +3,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "onebot_api.hpp"
@@ -46,12 +47,18 @@ private:
     bool ProposePlugin(OneBotApi& api, const std::string& user_id, Session& session);
     bool ProposeCommand(OneBotApi& api, const std::string& user_id, Session& session);
     bool ReviewCommand(const Session& session, const PluginInfo& plugin,
+                       const std::string& user_id,
                        const std::string& description, std::string& reason);
     void ExecuteCommand(OneBotApi& api, const std::string& user_id, Session& session);
+    bool CancellationRequested(const std::string& user_id);
+    bool StopIfRequested(OneBotApi& api, const std::string& user_id);
+    bool HandleCancellation(OneBotApi& api, const std::string& user_id);
     bool SendAndRecord(OneBotApi& api, const std::string& user_id,
                        Session& session, const std::string& message);
     static std::string FormatDialogue(const Session& session);
 
     std::mutex mutex_;
+    std::mutex cancellation_mutex_;
     std::unordered_map<std::string, Session> sessions_;
+    std::unordered_set<std::string> cancellation_requests_;
 };

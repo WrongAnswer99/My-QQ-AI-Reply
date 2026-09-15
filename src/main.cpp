@@ -460,7 +460,8 @@ static void HandleMasterCommand(OneBotApi& api, const std::string& user_id,
                 + "\n\n内置命令执行器（选择及每条命令均须人工确认，禁止自动审批）："
                   "\n1. PowerShell（优先）\n2. CMD（仅限 CMD/批处理语法）"
                 + "\n\n其他功能均由插件提供：引用一条消息并发送以“这个”开头的要求，启动 AI 插件交互。"
-                  "若要启用逐条命令的 AI 自动复核与执行，请在请求末尾加“自动审批”。";
+                  "若要启用逐条命令的 AI 自动复核与执行，请在请求末尾加“自动审批”。"
+                  "插件任务期间可单独发送“停止”“中断”“取消”等关键词，取消尚未开始的后续操作。";
     } else if (message == "/status") {
         reply = "QQ-AIreply 机器人运行中。NapCat 状态请查看 NapCat 窗口。";
     }

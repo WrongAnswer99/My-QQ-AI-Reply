@@ -181,6 +181,26 @@ bool IsCompletionConfirmed(const std::string& message) {
     return false;
 }
 
+bool IsCancellation(const std::string& message) {
+    std::string value = RemoveTrailingPunctuation(message);
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    static const char* commands[] = {
+        "停止", "停止任务", "停止操作", "停下", "停下吧",
+        "中断", "中断任务", "中断操作",
+        "取消", "取消任务", "取消操作", "取消这条命令", "取消吧",
+        "终止", "终止任务", "结束任务", "退出任务", "退出插件",
+        "放弃", "放弃任务", "算了", "不要了",
+        "stop", "/stop", "cancel", "/cancel", "abort", "/abort"
+    };
+    for (const char* command : commands) {
+        if (value == command) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool SendPrivate(OneBotApi& api, const std::string& user_id, const std::string& text) {
     return !text.empty() && api.SendPrivateMsg(user_id, text);
 }
@@ -322,8 +342,12 @@ bool ParseArgumentExplanations(const json& answer,
 bool PluginInteractionManager::Handle(OneBotApi& api, const std::string& user_id,
                                       const std::string& message,
                                       const std::string& replied_text) {
-    std::lock_guard<std::mutex> lock(mutex_);
     const std::string trimmed = Trim(message);
+    if (IsCancellation(trimmed)) {
+        return HandleCancellation(api, user_id);
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
     auto session_it = sessions_.find(user_id);
     if (session_it == sessions_.end()) {
         if (StartsWith(trimmed, "这个")) {
@@ -406,7 +430,11 @@ bool PluginInteractionManager::ProposePlugin(OneBotApi& api, const std::string& 
         "有明确候选时，question 必须询问是否使用该插件；信息不足时 plugin_id 为空并询问补充信息。";
     json answer;
     std::string error;
-    if (!AskStructuredAI(system_prompt, input.str(), answer, error)) {
+    const bool answered = AskStructuredAI(system_prompt, input.str(), answer, error);
+    if (StopIfRequested(api, user_id)) {
+        return true;
+    }
+    if (!answered) {
         SendAndRecord(api, user_id, session, "插件分析失败：" + error);
         return true;
     }
@@ -502,7 +530,11 @@ bool PluginInteractionManager::ProposeCommand(OneBotApi& api, const std::string&
         "否则给出一次 CLI 调用，等待用户确认。";
     json answer;
     std::string error;
-    if (!AskStructuredAI(system_prompt, input.str(), answer, error)) {
+    const bool answered = AskStructuredAI(system_prompt, input.str(), answer, error);
+    if (StopIfRequested(api, user_id)) {
+        return true;
+    }
+    if (!answered) {
         SendAndRecord(api, user_id, session, "CLI 规划失败：" + error);
         return true;
     }
@@ -559,7 +591,11 @@ bool PluginInteractionManager::ProposeCommand(OneBotApi& api, const std::string&
     if (session.auto_approval && !IsBuiltinShellId(plugin->id)) {
         std::string review_reason;
         const bool approved = argument_explanations_valid
-            && ReviewCommand(session, *plugin, operation_explanation, review_reason);
+            && ReviewCommand(session, *plugin, user_id,
+                             operation_explanation, review_reason);
+        if (StopIfRequested(api, user_id)) {
+            return true;
+        }
         if (!argument_explanations_valid) {
             review_reason = "参数说明结构不完整，无法可靠核对每个参数："
                 + argument_explanation_error;
@@ -592,6 +628,7 @@ bool PluginInteractionManager::ProposeCommand(OneBotApi& api, const std::string&
 
 bool PluginInteractionManager::ReviewCommand(const Session& session,
                                              const PluginInfo& plugin,
+                                             const std::string& user_id,
                                              const std::string& description,
                                              std::string& reason) {
     std::ostringstream reference_input;
@@ -620,6 +657,10 @@ bool PluginInteractionManager::ReviewCommand(const Session& session,
     if (!AskStructuredAI(reference_prompt, reference_input.str(),
                          reference_answer, reference_error)) {
         reason = "参数关联审查失败：" + reference_error;
+        return false;
+    }
+    if (CancellationRequested(user_id)) {
+        reason = "用户已请求停止任务";
         return false;
     }
     if (!reference_answer.contains("approved")
@@ -672,6 +713,10 @@ bool PluginInteractionManager::ReviewCommand(const Session& session,
         reason = "审查请求失败：" + error;
         return false;
     }
+    if (CancellationRequested(user_id)) {
+        reason = "用户已请求停止任务";
+        return false;
+    }
     if (!answer.contains("approved") || !answer["approved"].is_boolean()) {
         reason = "AI 审查结果缺少有效的 approved 布尔值";
         return false;
@@ -682,6 +727,9 @@ bool PluginInteractionManager::ReviewCommand(const Session& session,
 
 void PluginInteractionManager::ExecuteCommand(OneBotApi& api, const std::string& user_id,
                                               Session& session) {
+    if (StopIfRequested(api, user_id)) {
+        return;
+    }
     const PluginInfo* plugin = FindPlugin(session.plugins, session.selected_plugin_id);
     if (plugin == nullptr || session.proposed_arguments.empty()) {
         session.stage = Stage::command_input;
@@ -702,7 +750,62 @@ void PluginInteractionManager::ExecuteCommand(OneBotApi& api, const std::string&
         "\n命令：" + FormatPluginCommand(plugin->cli_executable, arguments)
         + "\n退出码：" + std::to_string(result.exit_code)
         + "\n输出：\n" + ShortOutput(result.output) + "\n";
+    if (StopIfRequested(api, user_id)) {
+        return;
+    }
     ProposeCommand(api, user_id, session);
+}
+
+bool PluginInteractionManager::CancellationRequested(const std::string& user_id) {
+    std::lock_guard<std::mutex> lock(cancellation_mutex_);
+    return cancellation_requests_.find(user_id) != cancellation_requests_.end();
+}
+
+bool PluginInteractionManager::StopIfRequested(OneBotApi& api,
+                                                const std::string& user_id) {
+    {
+        std::lock_guard<std::mutex> lock(cancellation_mutex_);
+        if (cancellation_requests_.erase(user_id) == 0) {
+            return false;
+        }
+    }
+    sessions_.erase(user_id);
+    SendPrivate(api, user_id,
+                "本次插件任务已停止，会话历史已释放，尚未开始的命令不会执行。"
+                "停止前已经执行成功或已经启动的命令不会自动撤回。" );
+    return true;
+}
+
+bool PluginInteractionManager::HandleCancellation(OneBotApi& api,
+                                                  const std::string& user_id) {
+    {
+        std::lock_guard<std::mutex> lock(cancellation_mutex_);
+        cancellation_requests_.insert(user_id);
+    }
+
+    std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        SendPrivate(api, user_id,
+                    "已收到停止请求。当前正在进行的 AI 请求或 CLI 命令无法安全强制撤回；"
+                    "它结束后会立即停止，不再规划或执行下一条命令。" );
+        lock.lock();
+    }
+
+    {
+        std::lock_guard<std::mutex> cancellation_lock(cancellation_mutex_);
+        if (cancellation_requests_.erase(user_id) == 0) {
+            // 正在运行的流程已消费停止请求并完成清理。
+            return true;
+        }
+    }
+
+    const bool had_session = sessions_.erase(user_id) > 0;
+    SendPrivate(api, user_id,
+                had_session
+                    ? "本次插件任务已停止，会话历史已释放，尚未执行的命令已取消。"
+                      "此前已经执行成功的操作不会自动撤回。"
+                    : "当前没有正在进行的插件任务。" );
+    return true;
 }
 
 bool PluginInteractionManager::SendAndRecord(OneBotApi& api, const std::string& user_id,
