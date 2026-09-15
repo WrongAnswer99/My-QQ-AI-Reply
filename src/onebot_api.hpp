@@ -19,6 +19,12 @@ public:
     // 根据消息 id 获取消息内容（data.message 部分存入 message），成功返回 true
     bool GetMsg(const std::string& message_id, nlohmann::json& message);
 
+    // 通过 NapCat 文件标识获取文件的 Base64 数据。
+    bool GetFileBase64(const std::string& file_id, std::string& base64);
+
+    // 下载图片消息段提供的 HTTP(S) 地址，成功时返回二进制内容。
+    bool DownloadUrl(const std::string& url, std::string& data);
+
 private:
     // 调用任意 OneBot action，body_json 为动作参数，响应 JSON 存入 response
     bool PostJson(const std::string& action, const std::string& body_json, std::string& response);

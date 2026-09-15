@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 // AI 回复接口：基于 libcurl 调用 OpenAI 兼容接口（参考 test 项目的实现）
 namespace ai {
@@ -15,9 +16,19 @@ struct Settings {
 // 初始化 AI 客户端，需在首次调用 Chat 之前调用一次
 bool Init(const Settings& settings, std::string& error);
 
+struct Message {
+    std::string role;    // system / user / assistant
+    std::string content;
+    struct Image {
+        std::string mime_type;
+        std::string base64;
+    };
+    std::vector<Image> images;
+};
+
 struct ChatRequest {
     std::string system_prompt; // 系统提示词
-    std::string user_message;  // 用户消息
+    std::vector<Message> messages; // 按时间顺序发送的上下文与当前消息
 };
 
 // 调用 AI 接口，成功返回回复文本；失败返回空串并填充 error

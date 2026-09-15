@@ -23,6 +23,18 @@ bool Config::LoadFromFile(const std::string& path, Config& out_config, std::stri
         out_config.private_chat_enabled = cfg.value("private_chat_enabled", true);
         out_config.group_need_at        = cfg.value("group_need_at", true);
 
+        const int group_history_limit = cfg.value("group_history_limit", 100);
+        const int interaction_history_limit =
+            cfg.value("group_interaction_history_limit", 30);
+        if (group_history_limit < 0 || interaction_history_limit < 0) {
+            error = "群聊历史数量配置不能为负数";
+            return false;
+        }
+        out_config.group_history_limit = static_cast<std::size_t>(group_history_limit);
+        out_config.group_interaction_history_limit =
+            static_cast<std::size_t>(interaction_history_limit);
+        out_config.image_history_enabled = cfg.value("image_history_enabled", false);
+
         out_config.group_trigger_keywords.clear();
         if (cfg.contains("group_trigger_keywords") && cfg["group_trigger_keywords"].is_array()) {
             for (const auto& keyword : cfg["group_trigger_keywords"]) {

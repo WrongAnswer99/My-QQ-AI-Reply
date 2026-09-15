@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,9 @@ struct Config {
     bool        private_chat_enabled = true; // 是否回复私聊消息
     bool        group_need_at = true;        // 群聊是否要求被 @ 才回复
     std::vector<std::string> group_trigger_keywords; // 群聊触发关键词（未 @ 时含关键词也回复）
+    std::size_t group_history_limit = 100;       // 每个群保留的最近消息数
+    std::size_t group_interaction_history_limit = 30; // 每个群分别保留的 @ 消息数和对应回复数
+    bool image_history_enabled = false;          // 是否保存群聊图片 Base64 并发送给 AI
 
     AiConfig ai; // AI 接口配置
 

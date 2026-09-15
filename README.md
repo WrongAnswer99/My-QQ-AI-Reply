@@ -6,10 +6,11 @@
 
 - **私聊问答**：任何人都可与机器人私聊（可在配置中关闭）
 - **群聊问答**：默认需要被 `@` 才回复，也可配置触发关键词
+- **群聊上下文**：按群隔离保存最近群消息、对机器人的 `@` 消息和机器人回复，并随请求一起交给 AI
+- **可选图片历史**：可将群聊图片以 Base64 写入历史，并以多模态格式随上下文发送给 AI
 - **回复上下文**：引用（回复）某条消息时，机器人会把被引用消息的原文一并带给 AI 理解
 - **角色扮演**：通过提示词支持让机器人扮演任意角色
-- **记录功能**：主人引用消息并发 `!note` 可归档内容，`!note` 查看全部记录
-- **主人指令**：私聊中 `!` 开头的消息按指令处理（`!help` / `!status` / `!note`），主人消息永不交给 AI
+- **主人指令**：私聊中 `!` 开头的消息按指令处理（`!help` / `!status`），主人消息永不交给 AI
 
 ## 工作原理
 
@@ -36,7 +37,7 @@ QQ-AIreply 机器人（本地 HTTP 上报服务，默认 8081 端口）
 │   ├── ai_client.*    # 阿里云百炼 AI 接口客户端（libcurl）
 │   ├── onebot_api.*   # OneBot 11 HTTP API 客户端
 │   ├── http_server.*  # 本地 HTTP 上报服务（NapCat 事件推送入口）
-│   ├── note.*         # 记录功能（持久化到 userdata/note.json）
+│   ├── group_history.*# 按群隔离、JSON 持久化的滚动聊天历史
 │   └── test_ai.cpp    # AI 接口独立测试程序
 ├── thirdparty/        # 第三方头文件（nlohmann/json）
 ├── config.json        # 运行配置（含密钥，已被 git 忽略，不入库）
@@ -76,11 +77,14 @@ Copy-Item config_example.json config.json
 | `napcat_token` | NapCat HTTP API 的 `access_token`。需登录 NapCat WebUI（默认 `http://127.0.0.1:6099/webui`），在「网络配置」中查看或设置该 token，**必须与 NapCat 中配置的完全一致**；若 NapCat 未启用鉴权则留空 |
 | `http_report_port` | 机器人本地 HTTP 上报服务的监听端口（默认 8081）。NapCat 会把消息事件推送至此，需与 NapCat WebUI 中配置的 HTTP 上报地址端口一致 |
 | `bot_qq` | 机器人自己的 QQ 号（即登录 NapCat 的那个账号），用于判断群消息中是否 `@` 了机器人 |
-| `master_qq` | 主人 QQ 号。主人私聊机器人的消息按指令处理（`!help` / `!status` / `!note`），**永不交给 AI**。**若留空则没有"主人"概念**：私聊中任何 `!` 指令都不生效，所有用户的私聊消息（`private_chat_enabled=true` 时）都会交给 AI 回复 |
+| `master_qq` | 主人 QQ 号。主人私聊机器人的消息按指令处理（`!help` / `!status`），**永不交给 AI**。**若留空则没有"主人"概念**：私聊中任何 `!` 指令都不生效，所有用户的私聊消息（`private_chat_enabled=true` 时）都会交给 AI 回复 |
 | `qq_path` | 本机 QQ 客户端的完整安装路径，**必须替换为你实际安装的位置**，例如 `C:\Program Files\Tencent\QQNT\QQ.exe`。`start_bot.ps1` 会用它启动 QQ |
 | `private_chat_enabled` | 是否允许机器人回复**私聊**消息：`true` 回复所有人私聊；`false` 只处理主人指令，其他人私聊不回复 |
 | `group_need_at` | 群聊中是否必须被 `@` 才回复：`true` 仅当被 `@`（或命中触发关键词）时回复；`false` 群里所有消息都会触发 |
 | `group_trigger_keywords` | 群聊触发关键词数组。消息即使没被 `@`，只要包含其中任意关键词也会回复；`[]` 表示不启用关键词触发 |
+| `group_history_limit` | 每个群保留并发送给 AI 的最近群聊文本条数，默认 `100`；设为 `0` 可关闭这部分历史 |
+| `group_interaction_history_limit` | 每个群分别保留的“@ 机器人消息”和“机器人对此的成功回复”条数，默认各 `30`；设为 `0` 可关闭这部分历史 |
+| `image_history_enabled` | 是否保存并发送群聊图片。`true` 时图片以 Base64 保存在历史 JSON，并作为多模态 `image_url` 内容发送给 AI；`false`（默认）时忽略图片段和纯图片消息。使用时需确保所选模型支持图片理解 |
 
 **`ai` 对象字段（阿里云百炼配置）**
 
@@ -138,13 +142,14 @@ powershell -ExecutionPolicy Bypass -File .\start_bot.ps1
 - **主人指令**（仅 `master_qq` 私聊有效，均以 `!` 开头）：
   - `!help` — 查看帮助
   - `!status` — 查看运行状态
-  - `!note` — 查看记录列表；先引用（回复）某条消息再发 `!note` 可将其加入记录
 
 > **若 `master_qq` 留空**：机器人不再区分主人与普通用户——私聊中 `!` 指令不生效，所有用户的私聊消息都会（在 `private_chat_enabled=true` 时）交给 AI 回复，相当于"来者不拒"模式。群聊行为不受 `master_qq` 影响。
 - **回复上下文**：引用一条消息发送，机器人会结合被引用消息理解后回答
+- **群聊历史**：历史按群号隔离并保存在 `userdata/group_history.json`，包含时间、发送者和文本，重启后自动恢复。每个数组超过配置上限时从头部丢弃最旧记录。机器人成功发送到群里的回复也会进入普通群聊历史，只有实际 `@` 机器人的消息及其回复会进入专门的交互历史
+- **图片历史**：将 `image_history_enabled` 设为 `true` 后，群聊图片的 MIME 类型和 Base64 数据会保存在对应消息的 `images` 数组中，并随历史发送给 AI；关闭时不会读取、保存或发送图片，启动加载历史时也会清除已有的图片数据
 
 ## 隐私与安全
 
 - API Key、Token、QQ 号等敏感信息仅存于本地 `config.json`，不入库
-- 运行数据（记录等）保存在 `userdata/`，NapCat 运行数据保存在 `NapCat.Shell/`，均不入库
+- 群聊上下文保存在 `userdata/group_history.json`，NapCat 运行数据保存在 `NapCat.Shell/`，均不入库
 - 请勿将本机器人用于任何违法或骚扰用途

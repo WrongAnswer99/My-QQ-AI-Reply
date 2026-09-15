@@ -61,6 +61,63 @@ bool OneBotApi::GetMsg(const std::string& message_id, json& message) {
     }
 }
 
+bool OneBotApi::GetFileBase64(const std::string& file_id, std::string& base64) {
+    if (file_id.empty()) {
+        return false;
+    }
+
+    json body;
+    body["file_id"] = file_id;
+
+    std::string response;
+    if (!PostJson("get_file", body.dump(), response)) {
+        return false;
+    }
+
+    try {
+        const json resp = json::parse(response);
+        if (resp.value("status", "") != "ok" || !resp.contains("data")
+            || !resp["data"].is_object()) {
+            return false;
+        }
+        base64 = resp["data"].value("base64", "");
+        return !base64.empty();
+    } catch (...) {
+        return false;
+    }
+}
+
+bool OneBotApi::DownloadUrl(const std::string& url, std::string& data) {
+    if (url.empty()) {
+        return false;
+    }
+    CURL* curl = curl_easy_init();
+    if (curl == nullptr) {
+        return false;
+    }
+
+    data.clear();
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    const CURLcode result = curl_easy_perform(curl);
+    long http_code = 0;
+    if (result == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    }
+    curl_easy_cleanup(curl);
+    if (result != CURLE_OK || http_code < 200 || http_code >= 300 || data.empty()) {
+        data.clear();
+        return false;
+    }
+    return true;
+}
+
 bool OneBotApi::PostJson(const std::string& action, const std::string& body_json, std::string& response) {
     CURL* curl = curl_easy_init();
     if (curl == nullptr) {

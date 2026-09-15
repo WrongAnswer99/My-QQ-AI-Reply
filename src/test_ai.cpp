@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
 
     // 调用 AI
     std::string error;
-    std::string reply = ai::Chat({ config.ai.system_prompt, message }, error);
+    std::string reply = ai::Chat({ config.ai.system_prompt, {{"user", message}} }, error);
     if (reply.empty()) {
         std::cerr << "[AI 错误] " << error << std::endl;
         return 1;

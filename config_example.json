@@ -8,6 +8,9 @@
     "private_chat_enabled": true,
     "group_need_at": true,
     "group_trigger_keywords": [],
+    "group_history_limit": 100,
+    "group_interaction_history_limit": 30,
+    "image_history_enabled": false,
     "ai": {
         "api_key": "your_api_key",
         "base_url": "your_base_url",

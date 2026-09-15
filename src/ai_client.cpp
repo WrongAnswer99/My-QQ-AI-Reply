@@ -2,6 +2,7 @@
 
 #include <curl/curl.h>
 #include <mutex>
+#include <utility>
 
 #include "json.hpp"
 
@@ -56,10 +57,32 @@ std::string Chat(const ChatRequest& request, std::string& error) {
         {"role", "system"},
         {"content", request.system_prompt}
     });
-    request_body["messages"].push_back({
-        {"role", "user"},
-        {"content", request.user_message}
-    });
+    for (const Message& message : request.messages) {
+        if (message.images.empty()) {
+            request_body["messages"].push_back({
+                {"role", message.role},
+                {"content", message.content}
+            });
+            continue;
+        }
+
+        json content = json::array();
+        if (!message.content.empty()) {
+            content.push_back({{"type", "text"}, {"text", message.content}});
+        }
+        for (const Message::Image& image : message.images) {
+            content.push_back({
+                {"type", "image_url"},
+                {"image_url", {
+                    {"url", "data:" + image.mime_type + ";base64," + image.base64}
+                }}
+            });
+        }
+        request_body["messages"].push_back({
+            {"role", message.role},
+            {"content", std::move(content)}
+        });
+    }
     request_body["stream"] = false;
 
     CURL* curl = curl_easy_init();

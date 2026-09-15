@@ -20,7 +20,7 @@ add_executable(qq_ai_reply
     src/http_server.cpp
     src/onebot_api.cpp
     src/ai_client.cpp
-    src/note.cpp
+    src/group_history.cpp
 )
 
 target_include_directories(qq_ai_reply PRIVATE ${CURL_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/thirdparty)
@@ -34,3 +34,11 @@ add_executable(test_ai
 )
 target_include_directories(test_ai PRIVATE ${CURL_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/thirdparty)
 target_link_libraries(test_ai ${CURL_LIBRARY} ws2_32 wldap32 crypt32)
+
+enable_testing()
+add_executable(test_group_history
+    src/test_group_history.cpp
+    src/group_history.cpp
+)
+target_include_directories(test_group_history PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty)
+add_test(NAME group_history COMMAND test_group_history)
