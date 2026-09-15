@@ -21,6 +21,7 @@ add_executable(qq_ai_reply
     src/onebot_api.cpp
     src/ai_client.cpp
     src/group_history.cpp
+    src/message_format.cpp
 )
 
 target_include_directories(qq_ai_reply PRIVATE ${CURL_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/thirdparty)
@@ -39,6 +40,7 @@ enable_testing()
 add_executable(test_group_history
     src/test_group_history.cpp
     src/group_history.cpp
+    src/message_format.cpp
 )
 target_include_directories(test_group_history PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty)
 add_test(NAME group_history COMMAND test_group_history)

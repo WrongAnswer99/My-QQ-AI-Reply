@@ -16,6 +16,10 @@ public:
     // 发送群聊消息，成功返回 true
     bool SendGroupMsg(const std::string& group_id, const std::string& message);
 
+    // 发送 OneBot 消息段数组（用于真正的 @ 消息等）。
+    bool SendGroupMsgSegments(const std::string& group_id,
+                              const nlohmann::json& message_segments);
+
     // 根据消息 id 获取消息内容（data.message 部分存入 message），成功返回 true
     bool GetMsg(const std::string& message_id, nlohmann::json& message);
 

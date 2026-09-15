@@ -40,6 +40,19 @@ bool OneBotApi::SendGroupMsg(const std::string& group_id, const std::string& mes
     return PostJson("send_group_msg", body.dump(), response);
 }
 
+bool OneBotApi::SendGroupMsgSegments(const std::string& group_id,
+                                     const json& message_segments) {
+    if (!message_segments.is_array() || message_segments.empty()) {
+        return false;
+    }
+    json body;
+    body["group_id"] = std::stoll(group_id);
+    body["message"] = message_segments;
+
+    std::string response;
+    return PostJson("send_group_msg", body.dump(), response);
+}
+
 bool OneBotApi::GetMsg(const std::string& message_id, json& message) {
     json body;
     body["message_id"] = std::stoll(message_id);

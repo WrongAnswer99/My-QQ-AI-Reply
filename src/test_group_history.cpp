@@ -4,6 +4,7 @@
 
 #include "group_history.hpp"
 #include "json.hpp"
+#include "message_format.hpp"
 
 using json = nlohmann::json;
 
@@ -77,6 +78,23 @@ int main() {
                         && !contains_image(without_images.mentions)
                         && !contains_image(without_images.replies),
                     "关闭图片历史后仍加载了 Base64 数据");
+
+    const std::string prefixed_reply =
+        "[2026-09-15 16:57:25] 机器人(QQ:3512968021): 回复正文";
+    passed &= Check(CleanAIReply(prefixed_reply) == "回复正文",
+                    "没有正确清理模型仿写的时间和机器人前缀");
+
+    const json segments = BuildGroupReplySegments(
+        "你好 [@3543304389]，也叫一下 @1241183351！");
+    passed &= Check(segments.size() == 5, "@ 回复没有拆成正确数量的 OneBot 消息段");
+    passed &= Check(segments.size() < 2
+                        || (segments[1].value("type", "") == "at"
+                            && segments[1]["data"].value("qq", "") == "3543304389"),
+                    "方括号 @ 没有转换为 OneBot at 消息段");
+    passed &= Check(segments.size() < 4
+                        || (segments[3].value("type", "") == "at"
+                            && segments[3]["data"].value("qq", "") == "1241183351"),
+                    "普通文字 @ 没有转换为 OneBot at 消息段");
 
     std::filesystem::remove(file_path, filesystem_error);
     if (!passed) {

@@ -15,6 +15,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "[错误] " << config_error << std::endl;
         return 1;
     }
+    config.ai.system_prompt = config.ExpandPromptVariables(config.ai.system_prompt);
+    config.ai.user_prompt = config.ExpandPromptVariables(config.ai.user_prompt);
 
     // 初始化 AI 客户端
     std::string init_error;
@@ -33,7 +35,12 @@ int main(int argc, char* argv[]) {
 
     // 调用 AI
     std::string error;
-    std::string reply = ai::Chat({ config.ai.system_prompt, {{"user", message}} }, error);
+    ai::ChatRequest request{config.ai.system_prompt, {}};
+    if (!config.ai.user_prompt.empty()) {
+        request.messages.push_back({"user", "【用户提示词】\n" + config.ai.user_prompt});
+    }
+    request.messages.push_back({"user", message});
+    std::string reply = ai::Chat(request, error);
     if (reply.empty()) {
         std::cerr << "[AI 错误] " << error << std::endl;
         return 1;

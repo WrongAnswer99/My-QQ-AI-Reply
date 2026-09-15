@@ -19,6 +19,7 @@ bool Config::LoadFromFile(const std::string& path, Config& out_config, std::stri
         out_config.napcat_token         = cfg.value("napcat_token", "");
         out_config.http_report_port     = cfg.value("http_report_port", 8081);
         out_config.bot_qq               = cfg.value("bot_qq", "");
+        out_config.bot_name             = cfg.value("bot_name", "机器人");
         out_config.master_qq            = cfg.value("master_qq", "");
         out_config.private_chat_enabled = cfg.value("private_chat_enabled", true);
         out_config.group_need_at        = cfg.value("group_need_at", true);
@@ -49,6 +50,7 @@ bool Config::LoadFromFile(const std::string& path, Config& out_config, std::stri
             out_config.ai.base_url      = ai.value("base_url", "");
             out_config.ai.model         = ai.value("model", "");
             out_config.ai.system_prompt = ai.value("system_prompt", out_config.ai.system_prompt);
+            out_config.ai.user_prompt   = ai.value("user_prompt", "");
         }
         return true;
     } catch (const std::exception& e) {
@@ -56,4 +58,16 @@ bool Config::LoadFromFile(const std::string& path, Config& out_config, std::stri
         error += e.what();
         return false;
     }
+}
+
+std::string Config::ExpandPromptVariables(const std::string& prompt) const {
+    std::string expanded = prompt;
+    const std::string variable = "<bot_name>";
+    const std::string value = bot_name.empty() ? "机器人" : bot_name;
+    std::size_t position = 0;
+    while ((position = expanded.find(variable, position)) != std::string::npos) {
+        expanded.replace(position, variable.size(), value);
+        position += value.size();
+    }
+    return expanded;
 }

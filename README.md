@@ -77,6 +77,7 @@ Copy-Item config_example.json config.json
 | `napcat_token` | NapCat HTTP API 的 `access_token`。需登录 NapCat WebUI（默认 `http://127.0.0.1:6099/webui`），在「网络配置」中查看或设置该 token，**必须与 NapCat 中配置的完全一致**；若 NapCat 未启用鉴权则留空 |
 | `http_report_port` | 机器人本地 HTTP 上报服务的监听端口（默认 8081）。NapCat 会把消息事件推送至此，需与 NapCat WebUI 中配置的 HTTP 上报地址端口一致 |
 | `bot_qq` | 机器人自己的 QQ 号（即登录 NapCat 的那个账号），用于判断群消息中是否 `@` 了机器人 |
+| `bot_name` | 机器人显示名称。程序会用该值替换 `ai.system_prompt` 和 `ai.user_prompt` 中的 `<bot_name>`；示例配置仅保留占位值，不公开实际名称 |
 | `master_qq` | 主人 QQ 号。主人私聊机器人的消息按指令处理（`!help` / `!status`），**永不交给 AI**。**若留空则没有"主人"概念**：私聊中任何 `!` 指令都不生效，所有用户的私聊消息（`private_chat_enabled=true` 时）都会交给 AI 回复 |
 | `qq_path` | 本机 QQ 客户端的完整安装路径，**必须替换为你实际安装的位置**，例如 `C:\Program Files\Tencent\QQNT\QQ.exe`。`start_bot.ps1` 会用它启动 QQ |
 | `private_chat_enabled` | 是否允许机器人回复**私聊**消息：`true` 回复所有人私聊；`false` 只处理主人指令，其他人私聊不回复 |
@@ -93,7 +94,10 @@ Copy-Item config_example.json config.json
 | `ai.api_key` | 阿里云百炼 API Key（百炼控制台创建），用于调用大模型接口，**含敏感信息请勿提交仓库** |
 | `ai.base_url` | OpenAI 兼容接口地址，**须为完整的 `chat/completions` 端点**。公共地址如 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`；也可在百炼控制台获取账号专属的工作空间地址 |
 | `ai.model` | 使用的模型名，如 `qwen-max`、`qwen-plus` 等，需与 `base_url` 所在账号/工作空间支持的模型一致 |
-| `ai.system_prompt` | 系统提示词，用于定义机器人的昵称、语气、回复规则、角色扮演等，可按需自由编写 |
+| `ai.system_prompt` | 最高优先级的系统提示词，用于规定消息元数据、最终输出格式、真正 `@` 的标记格式和指令优先级 |
+| `ai.user_prompt` | 用户提示词，用于定义机器人昵称、群聊人格、语气、角色扮演和一般行为偏好；程序会将其作为独立的 `user` 消息发送 |
+
+`ai.system_prompt` 和 `ai.user_prompt` 均可使用 `<bot_name>` 变量；机器人启动时会将其替换为顶层 `bot_name` 的值。
 
 **AI 响应解析说明**
 
