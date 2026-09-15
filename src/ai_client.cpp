@@ -1,6 +1,9 @@
 #include "ai_client.hpp"
 
+#include <ctime>
 #include <curl/curl.h>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <utility>
 
@@ -25,9 +28,42 @@ namespace {
 
 Settings g_settings;          // 全局 AI 设置
 std::once_flag g_init_flag;   // 保证 curl_global_init 只执行一次
+std::mutex g_log_mutex;       // 防止并发 AI 请求交叉写入日志
 
 void GlobalInitOnce() {
     curl_global_init(CURL_GLOBAL_DEFAULT);
+}
+
+void LogAIOutput(const std::string& output) {
+    // 日志失败不能影响正常回复，因此这里有意静默返回。
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    const std::time_t now = std::time(nullptr);
+    std::tm local_time{};
+    if (localtime_s(&local_time, &now) != 0) {
+        return;
+    }
+
+    char date[11]{};
+    char timestamp[20]{};
+    if (std::strftime(date, sizeof(date), "%Y-%m-%d", &local_time) == 0
+        || std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S",
+                         &local_time) == 0) {
+        return;
+    }
+
+    std::error_code directory_error;
+    const std::filesystem::path log_directory = std::filesystem::current_path() / "logs";
+    std::filesystem::create_directories(log_directory, directory_error);
+    if (directory_error) {
+        return;
+    }
+
+    std::ofstream log(log_directory / (std::string(date) + ".log"),
+                      std::ios::binary | std::ios::app);
+    if (!log) {
+        return;
+    }
+    log << "[" << timestamp << "] AI output\n" << output << "\n\n";
 }
 
 } // namespace
@@ -124,10 +160,15 @@ std::string Chat(const ChatRequest& request, std::string& error) {
             return std::string();
         }
         if (response.contains("choices")) {
-            return response["choices"][0]["message"]["content"].get<std::string>();
+            const std::string output =
+                response["choices"][0]["message"]["content"].get<std::string>();
+            LogAIOutput(output);
+            return output;
         }
         if (response.contains("text")) {
-            return response["text"].get<std::string>();
+            const std::string output = response["text"].get<std::string>();
+            LogAIOutput(output);
+            return output;
         }
         error = "无法识别的响应: " + response.dump();
     } catch (const json::exception& e) {

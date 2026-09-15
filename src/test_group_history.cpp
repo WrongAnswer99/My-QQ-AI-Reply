@@ -3,6 +3,7 @@
 #include <string>
 
 #include "group_history.hpp"
+#include "message_format.hpp"
 #include "json.hpp"
 #include "message_format.hpp"
 

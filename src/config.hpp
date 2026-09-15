@@ -20,7 +20,7 @@ struct Config {
     int         http_report_port = 8081; // 机器人本地 HTTP 服务端口，NapCat 将事件上报到这里
     std::string bot_qq;                  // 机器人自己的 QQ 号（用于判断是否被 @）
     std::string bot_name = "机器人";     // 机器人名称，用于替换提示词中的 <bot_name>
-    std::string master_qq;               // 主人 QQ 号（预留：后续可用于识别群主/管理员）
+    std::string master_qq;               // 主人 QQ 号（用于内部指令和插件交互鉴权）
     bool        private_chat_enabled = true; // 是否回复私聊消息
     bool        group_need_at = true;        // 群聊是否要求被 @ 才回复
     std::vector<std::string> group_trigger_keywords; // 群聊触发关键词（未 @ 时含关键词也回复）

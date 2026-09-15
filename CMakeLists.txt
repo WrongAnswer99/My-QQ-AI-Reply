@@ -22,6 +22,9 @@ add_executable(qq_ai_reply
     src/ai_client.cpp
     src/group_history.cpp
     src/message_format.cpp
+    src/plugin_catalog.cpp
+    src/plugin_runner.cpp
+    src/plugin_interaction.cpp
 )
 
 target_include_directories(qq_ai_reply PRIVATE ${CURL_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/thirdparty)

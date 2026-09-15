@@ -5,6 +5,25 @@
 $Root = $PSScriptRoot
 $NapCatDir = Join-Path $Root 'NapCat.Shell'
 
+# NapCat Shell 需要管理员权限才能稳定地把 Hook 注入 QQ。
+# 与其自带的 launcher-win10.bat 保持一致：权限不足时重新以管理员身份运行本脚本。
+$currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$currentPrincipal = [Security.Principal.WindowsPrincipal]::new($currentIdentity)
+$isAdministrator = $currentPrincipal.IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+if (-not $isAdministrator) {
+    Write-Host "[*] NapCat requires administrator privileges. Requesting elevation..." -ForegroundColor Yellow
+    $elevatedArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    try {
+        Start-Process powershell.exe -Verb RunAs -ArgumentList $elevatedArgs -WorkingDirectory $Root
+    } catch {
+        Write-Host "[!] ERROR: 无法请求管理员权限：$($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+    exit 0
+}
+
 # ===== 配置（从 config.json 读取，保持单一维护点）=====
 $configData = Get-Content (Join-Path $Root 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $QQPath = $configData.qq_path

@@ -19,6 +19,8 @@
 #include "http_server.hpp"
 #include "message_format.hpp"
 #include "onebot_api.hpp"
+#include "plugin_catalog.hpp"
+#include "plugin_interaction.hpp"
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -448,31 +450,38 @@ static bool ReplyWithAI(OneBotApi& api, const std::string& target_type,
     return sent;
 }
 
-// 处理 master（主人）私聊指令，例如 !help !status（更多指令在此扩展）
-// 指令前缀为 !（/ 在 QQ 中会触发表情）
+// 处理 master（主人）仅有的两个内部私聊指令：/help、/status。
 static void HandleMasterCommand(OneBotApi& api, const std::string& user_id,
                                 const std::string& message) {
     std::string reply;
-    if (message == "!help") {
-        reply = "可用指令：\n!help - 显示帮助\n!status - 查看运行状态";
-    } else if (message == "!status") {
+    if (message == "/help") {
+        reply = "内部指令：\n/help - 显示帮助\n/status - 查看运行状态\n\n"
+                + BuildPluginList(DiscoverPlugins())
+                + "\n\n内置命令执行器（选择及每条命令均须人工确认，禁止自动审批）："
+                  "\n1. PowerShell（优先）\n2. CMD（仅限 CMD/批处理语法）"
+                + "\n\n其他功能均由插件提供：引用一条消息并发送以“这个”开头的要求，启动 AI 插件交互。"
+                  "若要启用逐条命令的 AI 自动复核与执行，请在请求末尾加“自动审批”。";
+    } else if (message == "/status") {
         reply = "QQ-AIreply 机器人运行中。NapCat 状态请查看 NapCat 窗口。";
-    } else {
-        reply = "未识别的指令：" + message + "\n输入 !help 查看可用指令。";
     }
 
-    if (!api.SendPrivateMsg(user_id, reply)) {
+    if (!reply.empty() && !api.SendPrivateMsg(user_id, reply)) {
         std::cerr << "[指令发送失败] " << user_id << std::endl;
     }
 }
 
-// 处理 master（主人）私聊消息：! 开头为指令，其他内容一律忽略（不进 AI、不回复）
+// /help、/status 是不会进入插件上下文的内部指令；其他消息再交给插件交互处理。
 static void HandleMasterPrivate(OneBotApi& api, const std::string& user_id,
-                                const std::string& message) {
-    if (message.empty() || message[0] != '!') {
-        return; // 非指令内容：忽略
+                                const std::string& message, const std::string& replied_text,
+                                PluginInteractionManager& plugin_interaction) {
+    if (message == "/help" || message == "/status") {
+        HandleMasterCommand(api, user_id, message);
+        return;
     }
-    HandleMasterCommand(api, user_id, message);
+    if (plugin_interaction.Handle(api, user_id, message, replied_text)) {
+        return;
+    }
+    // 其余 master 私聊内容不作为内部指令处理，也不直接交给普通聊天 AI。
 }
 
 int main() {
@@ -500,6 +509,7 @@ int main() {
     std::cout << "[启动] AI 客户端初始化成功，模型: " << config.ai.model << std::endl;
 
     OneBotApi api(config.napcat_http_base, config.napcat_token);
+    PluginInteractionManager plugin_interaction;
     GroupHistoryStore group_history(config.group_history_limit,
                                     config.group_interaction_history_limit,
                                     config.image_history_enabled);
@@ -565,7 +575,9 @@ int main() {
                 // master（主人）私聊消息按指令/内容处理，永不交给 AI
                 if (!config.master_qq.empty() && user_id == config.master_qq) {
                     std::cout << "[主人] " << user_id << ": " << plain_text << std::endl;
-                    HandleMasterPrivate(api, user_id, plain_text);
+                    std::string replied_text = GetRepliedText(api, event["message"]);
+                    HandleMasterPrivate(api, user_id, plain_text, replied_text,
+                                        plugin_interaction);
                 } else if (config.private_chat_enabled) {
                     std::cout << "[私聊] " << user_id << ": " << plain_text << std::endl;
                     std::string ai_message = BuildAIMessage(api, event["message"], plain_text);
