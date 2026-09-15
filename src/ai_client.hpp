@@ -29,6 +29,8 @@ struct Message {
 struct ChatRequest {
     std::string system_prompt; // 系统提示词
     std::vector<Message> messages; // 按时间顺序发送的上下文与当前消息
+    // 小于 0 时不传该参数，沿用服务端默认值；结构化决策可设为 0 降低随机性。
+    double temperature = -1.0;
 };
 
 // 调用 AI 接口，成功返回回复文本；失败返回空串并填充 error

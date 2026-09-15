@@ -196,7 +196,9 @@ std::string ExtractJsonObject(const std::string& response) {
 
 bool AskStructuredAI(const std::string& system_prompt, const std::string& input,
                      json& answer, std::string& error) {
-    const std::string response = ai::Chat({system_prompt, {{"user", input}}}, error);
+    ai::ChatRequest request{system_prompt, {{"user", input}}};
+    request.temperature = 0.0;
+    const std::string response = ai::Chat(request, error);
     if (response.empty()) {
         return false;
     }
@@ -266,6 +268,53 @@ std::string FormatArgumentExplanations(
         }
     }
     return result.str();
+}
+
+bool ParseArgumentExplanations(const json& answer,
+                               const std::vector<std::string>& arguments,
+                               std::vector<std::string>& explanations,
+                               std::string& error) {
+    explanations.assign(arguments.size(), std::string());
+    if (!answer.contains("argument_explanations")
+        || !answer["argument_explanations"].is_array()) {
+        error = "规划 AI 没有返回 argument_explanations 数组";
+        return false;
+    }
+
+    std::vector<bool> seen(arguments.size(), false);
+    for (const json& item : answer["argument_explanations"]) {
+        if (!item.is_object() || !item.contains("index")
+            || !item["index"].is_number_unsigned()
+            || !item.contains("argument") || !item["argument"].is_string()
+            || !item.contains("explanation") || !item["explanation"].is_string()) {
+            error = "参数说明必须包含有效的 index、argument 和 explanation";
+            return false;
+        }
+        const std::size_t index = item["index"].get<std::size_t>();
+        if (index >= arguments.size() || seen[index]) {
+            error = "参数说明含有越界或重复的 index";
+            return false;
+        }
+        if (item["argument"].get<std::string>() != arguments[index]) {
+            error = "第 " + std::to_string(index + 1) + " 项参数说明与实际参数不一致";
+            return false;
+        }
+        const std::string explanation = Trim(item["explanation"].get<std::string>());
+        if (explanation.empty()) {
+            error = "第 " + std::to_string(index + 1) + " 项参数说明为空";
+            return false;
+        }
+        explanations[index] = explanation;
+        seen[index] = true;
+    }
+
+    for (std::size_t index = 0; index < seen.size(); ++index) {
+        if (!seen[index]) {
+            error = "缺少第 " + std::to_string(index + 1) + " 个参数的说明";
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -419,6 +468,10 @@ bool PluginInteractionManager::ProposeCommand(OneBotApi& api, const std::string&
         "受运行机制限制，程序每轮只能接受并执行一条 CLI 命令，不能在一次回复中提交命令序列。"
         "一个用户请求可以由多条 CLI 命令共同完成：若需要先查询列表、搜索对象、读取状态或取得精确 ID，"
         "应先规划这一条准备命令，看到执行结果后再规划下一条，直至完成最终操作。"
+        "当用户明确说把内容加入、写入或更新某个具名对象时，介词后的名称是目标对象名。"
+        "必须优先用查询结果中对象自身的 title、name、display_name 等名称字段做精确或明确的包含匹配；"
+        "日志、备注、正文、子目标等嵌套内容只能描述对象内容，不能证明父对象就是用户指定的目标。"
+        "若名称字段存在明确匹配项，不得改选仅在嵌套内容上语义相关的其他对象；若名称匹配仍有多个候选则询问用户。"
         "只有引用消息和本轮完整对话中要求的全部目标都已完成时，才能返回 done=true。"
         "不得输出可执行文件名；args 必须是直接传给当前既定可执行文件的参数数组。";
     if (plugin->id == kPowerShellPluginId) {
@@ -435,12 +488,14 @@ bool PluginInteractionManager::ProposeCommand(OneBotApi& api, const std::string&
     system_prompt +=
         "只输出一个 JSON 对象，不要使用 Markdown："
         "{\"done\":false,\"args\":[\"参数\"],\"description\":\"将执行什么\","
-        "\"argument_explanations\":[\"与 args 中第一个参数对应的简短说明\"],"
+        "\"argument_explanations\":[{\"index\":0,\"argument\":\"与 args[0] 完全相同\","
+        "\"explanation\":\"该参数的作用和依据\"}],"
         "\"question\":\"确认问题或补充问题\",\"message\":\"完成时给用户的结果\"}。"
         "只要给出 CLI 调用，description 就必须用简洁但具体的中文说明：本步要做什么；"
         "为什么它是完成用户最终要求所需或合理的当前步骤；预期从本步得到什么，以及结果将怎样决定后续命令。"
         "还要明确它是只读的查询/定位步骤，还是会产生修改的执行步骤，不能只改写命令文字。"
-        "argument_explanations 必须与 args 数量相同并严格按顺序一一对应，每项简短解释该参数的作用和依据。"
+        "argument_explanations 必须覆盖 args 的每个位置且不能重复，index 从 0 开始，argument 必须与"
+        "对应的 args[index] 完全一致，explanation 简短解释该参数的作用和依据。"
         "命令类别或子命令参数要说明选择了什么操作；ID、路径等定位参数要说明它对应的对象以及来自哪次可靠结果；"
         "标题、正文、日期等值参数要说明它对应用户要求中的哪项内容。不要把多个参数合并解释。"
         "若任务已经完成，done=true、args=[]；若缺少必要信息，done=false、args=[] 并在 question 中询问；"
@@ -491,13 +546,10 @@ bool PluginInteractionManager::ProposeCommand(OneBotApi& api, const std::string&
     }
 
     std::vector<std::string> argument_explanations;
-    if (answer.contains("argument_explanations")
-        && answer["argument_explanations"].is_array()) {
-        for (const json& explanation : answer["argument_explanations"]) {
-            argument_explanations.push_back(
-                explanation.is_string() ? explanation.get<std::string>() : std::string());
-        }
-    }
+    std::string argument_explanation_error;
+    const bool argument_explanations_valid = ParseArgumentExplanations(
+        answer, session.proposed_arguments, argument_explanations,
+        argument_explanation_error);
     std::string description = answer.value("description", "准备调用插件 CLI");
     const std::string operation_explanation =
         description + "\n\n"
@@ -506,7 +558,13 @@ bool PluginInteractionManager::ProposeCommand(OneBotApi& api, const std::string&
                                                      session.proposed_arguments);
     if (session.auto_approval && !IsBuiltinShellId(plugin->id)) {
         std::string review_reason;
-        if (ReviewCommand(session, *plugin, operation_explanation, review_reason)) {
+        const bool approved = argument_explanations_valid
+            && ReviewCommand(session, *plugin, operation_explanation, review_reason);
+        if (!argument_explanations_valid) {
+            review_reason = "参数说明结构不完整，无法可靠核对每个参数："
+                + argument_explanation_error;
+        }
+        if (approved) {
             session.stage = Stage::command_input;
             if (!SendAndRecord(api, user_id, session,
                                "AI自动审批并执行\n\n" + operation_explanation
@@ -536,6 +594,45 @@ bool PluginInteractionManager::ReviewCommand(const Session& session,
                                              const PluginInfo& plugin,
                                              const std::string& description,
                                              std::string& reason) {
+    std::ostringstream reference_input;
+    reference_input
+        << "用户引用的消息：\n" << session.quoted_text << "\n\n"
+        << "用户原始要求：\n" << session.request_text << session.supplements << "\n\n"
+        << "此前执行结果（精确 ID 与对象名称只能以这里的映射为依据）：\n"
+        << (session.execution_history.empty() ? "（尚未执行）" : session.execution_history)
+        << "\n待审查操作说明及逐项参数说明：\n" << description
+        << "\n待审查命令：\n"
+        << FormatPluginCommand(plugin.cli_executable, session.proposed_arguments);
+    const std::string reference_prompt =
+        "你是专门核对 CLI 参数与对象映射的审批员，只检查待执行命令中的 ID、路径、名称和内容值"
+        "是否确实对应用户要求。规划说明只是待核对的主张，不能作为事实来源。"
+        "ID 字符串本身没有语义，必须使用此前执行结果中的 ID 到对象名称映射。"
+        "当用户说把内容加入、写入或更新某个具名对象时，介词后的名称是目标对象名。"
+        "优先比较对象自身的 title、name、display_name 等名称字段；日志、备注、正文、子目标等嵌套内容"
+        "不能证明父对象就是用户指定的目标。若一个对象名称明确包含用户指定名称，而命令却选择另一个"
+        "仅在内容上相关的对象，必须拒绝。还要逐项确认参数说明的序号、参数原值和事实依据没有错位。"
+        "对于不含任何待解析引用的 list、search、get 等查询命令，可以通过此项核对。"
+        "只输出一个 JSON 对象，不要使用 Markdown："
+        "{\"approved\":false,\"reason\":\"具体说明核对到的名称、ID或值\"}。";
+
+    json reference_answer;
+    std::string reference_error;
+    if (!AskStructuredAI(reference_prompt, reference_input.str(),
+                         reference_answer, reference_error)) {
+        reason = "参数关联审查失败：" + reference_error;
+        return false;
+    }
+    if (!reference_answer.contains("approved")
+        || !reference_answer["approved"].is_boolean()) {
+        reason = "参数关联审查缺少有效的 approved 布尔值";
+        return false;
+    }
+    if (!reference_answer["approved"].get<bool>()) {
+        reason = "参数关联审查未通过："
+            + reference_answer.value("reason", "未说明具体原因");
+        return false;
+    }
+
     const std::string help = GetCliHelp(plugin);
     std::ostringstream input;
     input << "用户引用的消息：\n" << session.quoted_text << "\n\n"

@@ -120,6 +120,9 @@ std::string Chat(const ChatRequest& request, std::string& error) {
         });
     }
     request_body["stream"] = false;
+    if (request.temperature >= 0.0) {
+        request_body["temperature"] = request.temperature;
+    }
 
     CURL* curl = curl_easy_init();
     if (curl == nullptr) {
